@@ -191,7 +191,8 @@ type rsync &> /dev/null && alias mv_progress="rsync --archive --progress --remov
     ' /proc/spl/kstat/zfs/arcstats
 }
 
-function hgcolordiff {
+
+type hg &> /dev/null && function hgcolordiff {
     hg diff "$@" | awk '
         {
             if(/^diff -r/)               {print "\033[1;34m" $0 "\033[1;000m"}
@@ -221,3 +222,57 @@ function field {
 for file in ~/.zshrc.d/*.sh; do
     . "${file}"
 done
+
+function zlocate {
+    local query=${1}
+    (
+        xzcat $(printf '%s\n' /Z/Swipper/Archive/z4-listing-* | sort | tail --lines 1)
+        xzcat $(printf '%s\n' /mnt/Z4/Temp/Swipper/Archive/z3-listing-* | sort | tail --lines 1)
+        find / -xdev 2> /dev/null
+    ) | grep --ignore-case "${query}"
+}
+
+function most_recently_modified_files {
+    find -type f -printf "%TY-%Tm-%TdT%TH-%TM-%TS %p\n" | sort
+}
+
+type mpv &> /dev/null && function play_random {
+    local vids=()
+
+    find "$@" \( \
+        -iname "*.avi" -or \
+        -iname "*.wmv" -or \
+        -iname "*.flv" -or \
+        -iname "*.mov" -or \
+        -iname "*.mpg" -or \
+        -iname "*.mpeg" -or \
+        -iname "*.asf" -or \
+        -iname "*.mp4" -or \
+        -iname "*.f4v" -or \
+        -iname "*.3gp" -or \
+        -iname "*.ts" -or \
+        -iname "*.tp" -or \
+        -iname "*.rvmb" -or \
+        -iname "*.rv" -or \
+        -iname "*.ogm" -or \
+        -iname "*.mkv" -or \
+        -iname "*.flac" -or \
+        -iname "*.webm" -or \
+        -iname "*.mp3" \
+        \) -print0 | \
+    sort --random-sort --zero-terminated | \
+    while IFS= read -r -d '' vid; do
+        vids+=("${vid}")
+    done
+
+    mpv --loop-playlist=inf "${vids[@]}"
+}
+
+# Set up ssh-agent
+export SSH_AUTH_SOCK=~/.ssh/ssh-agent.sock
+pid=($(pgrep -u swipper ssh-agent))
+if [ $? -ne 0 ]; then
+    ssh-agent -a "${SSH_AUTH_SOCK}"
+    pid=($(pgrep -u swipper ssh-agent))
+fi
+export SSH_AGENT_PID="${pid[1]}"
