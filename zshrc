@@ -2,33 +2,38 @@ HISTFILE=~/.zsh_history
 HISTSIZE=10023
 SAVEHIST=10023
 
-setopt incappendhistory \
-    autocd \
-    histfindnodups \
-    histreduceblanks \
-    histignorealldups \
-    histsavenodups \
-    autolist \
-    listpacked \
-    completealiases \
-    EXTENDED_HISTORY \
-    sharehistory \
-    nullglob
+setopt AUTO_CD  # cd to a directory without typing cd
+setopt AUTO_CONTINUE  # Jobs are sent SIGCONT when disowned
+setopt COMPLETE_ALIASES  # Don't expand aliases on tab completion
+setopt INTERACTIVE_COMMENTS # Allow comments in interactive shells
+setopt LIST_PACKED # Make auto-completion lists more compact visually
+setopt NULL_GLOB  # Allow empty wildcard matches
 
-unsetopt beep
+setopt \
+    EXTENDED_HISTORY \
+    HIST_FIND_NO_DUPS \
+    HIST_IGNORE_ALL_DUPS \
+    HIST_REDUCE_BLANKS \
+    HIST_SAVE_NO_DUPS \
+    INC_APPEND_HISTORY \
+    SHARE_HISTORY
+
+unsetopt BEEP
 
 typeset -ga chpwd_functions
 typeset -ga precmd_functions
 typeset -ga preexec_functions
 
-zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
-zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'  # Case-insensitive auto-completion
+zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}  # Colors in file menu
 zstyle ':completion:*:default' menu 'select=0'
+zstyle ':completion:*' rehash true  # Re-load list of commands on the PATH
 
-autoload -Uz compinit colors
+autoload -Uz compinit bashcompinit
 compinit
+bashcompinit
 
-autoload zkbd
+type zoxide &> /dev/null && eval "$(zoxide init zsh)"
 
 ## Fancy colors for GNU ls
 type dircolors &> /dev/null && eval `dircolors -b`
@@ -43,8 +48,6 @@ _pine="%{\e[1;38;5;34m%}"
 _mauve="%{\e[1;38;5;125m%}"
 _slate="%{\e[1;38;5;147m%}"
 _reset="%{\e[00m%}"
-
-# export LANG=ja_JP.utf8
 
 if [ "${STY}" ] ; then
     PS1="$(print ${_blue}'%*' ${_green}${STY} ${_blue}'%?' ${_green}'%n@%m' ${_blue}'%~' \$ ${_reset})"
@@ -84,7 +87,9 @@ function path_prepend {
     export PATH
 }
 
-path_prepend ~/local/bin ~/bin
+path_prepend ~/local/bin ~/bin ~/monorepo/bin
+# Ubuntu installs fd into this directory for some reason
+path_prepend /usr/lib/cargo/bin
 
 ## Set up editor
 type nano  &> /dev/null && export EDITOR="nano"
@@ -106,9 +111,9 @@ alias cal="cal -y"
 alias mkdir="mkdir -v"
 
 ls_cmd="ls -G" ## BSD
-eval "${ls_cmd}" / &> /dev/null && alias ls="${ls_cmd}"
+eval "${ls_cmd}" /etc &> /dev/null && alias ls="${ls_cmd}"
 ls_cmd="ls --color=auto --ignore-backups --hide=\*.aux --hide=\*.toc --hide=Thumbs.db --group-directories-first"
-eval "${ls_cmd}" / &> /dev/null && alias ls="${ls_cmd}"
+eval "${ls_cmd}" /etc &> /dev/null && alias ls="${ls_cmd}"
 
 alias rm="rm -i"
 rm -f --one-file-system &> /dev/null && alias rm="rm -i --one-file-system"
@@ -127,7 +132,7 @@ eval "${egrep_cmd}" . < /etc/resolv.conf &> /dev/null && alias egrep="${egrep_cm
 type emacs    &> /dev/null && alias emacs="emacs -nw"
 type ifstat   &> /dev/null && alias ifstat="ifstat -b"
 type nautilus &> /dev/null && alias nautilus="nautilus --no-desktop"
-type fdupes   &> /dev/null && alias fdupes="fdupes --noempty"
+type fdupes   &> /dev/null && alias fdupes="fdupes --noempty --order name"
 type xinit    &> /dev/null && alias myxinit="xinit -- -nolisten tcp"
 type scp      &> /dev/null && alias scp="scp -p"
 type sftp     &> /dev/null && alias sftp="sftp -p"
@@ -138,15 +143,12 @@ type localc   &> /dev/null && alias localc="localc --nologo"
 type opera    &> /dev/null && alias opera="opera -nomail -nolirc"
 type git      &> /dev/null && alias gitcolordiff="git --no-pager diff --color"
 
-## This may be required for Qt to find the Oxygen style
-## This is here instead of desktop autostart scripts so it works with X forwarding
-# export QT_PLUGIN_PATH=~/.kde4/lib/kde4/plugins/:/usr/lib/kde4/plugins/
-
-## ibus for international character sets
-## This is here instead of desktop autostart scripts so it works with X forwarding
-export GTK_IM_MODULE=ibus
-export XMODIFIERS=@im=ibus
-export QT_IM_MODULE=ibus
+if [ "$(lsb_release --codename --short)" != focal ]; then
+    # In Ubuntu Focal, looks like ibus is used when GNOME Shell is used.
+    export GTK_IM_MODULE=fcitx
+    export XMODIFIERS=@im=fcitx
+    export QT_IM_MODULE=fcitx
+fi
 
 bindkey "\e[1~" beginning-of-line
 bindkey "\e[4~" end-of-line
@@ -168,11 +170,41 @@ bindkey "\e[H" beginning-of-line
 bindkey "\e[F" end-of-line
 bindkey \\C-R history-incremental-search-backward
 bindkey \\C-K kill-line
+bindkey '^H' backward-kill-word
+bindkey '5~' kill-word
 
 ## Set up browser
 ## This needs to be done here rather than desktop autostart script because of the alias lines
 type chromium      &> /dev/null && export BROWSER=chromium
 type google-chrome &> /dev/null && export BROWSER=google-chrome
+
+if type chromium &> /dev/null; then
+    if type ssh &> /dev/null; then
+        function socks_chrome() {
+            ssh -N -D 6060 -C "${1}" -f -o ServerAliveInterval=90
+            chromium --proxy-server="socks://localhost:6060" http://ip4.me/
+        }
+    fi
+
+    alt_chromium_profile="/home/swipper/.Alt-P-Chromium-Profile"
+    if [ -e "${alt_chromium_profile}" ]; then
+        function alt-chromium() {
+            chromium --user-data-dir="${alt_chromium_profile}" "$@"
+        }
+    fi
+
+    alias unifi="chromium --user-data-dir=/home/swipper/.unifi-chrome-profile --app=https://unifi.rms.nyc:8443"
+    alias printer_web_uis="chromium --user-data-dir=/home/swipper/.printer-chrome-profile http://192.168.1.114/ http://192.168.1.77/"
+fi
+
+if type firefox &> /dev/null; then
+    alt_firefox_profile="/home/swipper/.Alt-P-Firefox-Profile"
+    if [ -e "${alt_firefox_profile}" ]; then
+        function alt-firefox() {
+            firefox --profile "${alt_firefox_profile}" "$@"
+        }
+    fi
+fi
 
 ## Show environment variables except LESS variables, which include control characters.
 function safeenv() {
@@ -190,7 +222,6 @@ type rsync &> /dev/null && alias mv_progress="rsync --archive --progress --remov
         }
     ' /proc/spl/kstat/zfs/arcstats
 }
-
 
 type hg &> /dev/null && function hgcolordiff {
     hg diff "$@" | awk '
@@ -212,67 +243,68 @@ type virsh &> /dev/null && export LIBVIRT_DEFAULT_URI=qemu:///system
 
 # Spin up n processes that just infinitely loop
 function loop {
-    for i in {1..${1}}; do while : ; do : ; done &  done
+    for i in {1..${1}}; do while : ; do : ; done & done
 }
 
 function field {
     awk '{print $'"${1}"';}'
 }
 
-for file in ~/.zshrc.d/*.sh; do
-    . "${file}"
-done
-
 function zlocate {
     local query=${1}
     (
-        xzcat $(printf '%s\n' /Z/Swipper/Archive/z4-listing-* | sort | tail --lines 1)
-        xzcat $(printf '%s\n' /mnt/Z4/Temp/Swipper/Archive/z3-listing-* | sort | tail --lines 1)
+        xzcat $(printf '%s\n' /Z/Swipper/Archive/z3-listing-* | sort | tail --lines 1)
         find / -xdev 2> /dev/null
     ) | grep --ignore-case "${query}"
 }
 
 function most_recently_modified_files {
-    find -type f -printf "%TY-%Tm-%TdT%TH-%TM-%TS %p\n" | sort
+    find -xdev -type f -printf "%TY-%Tm-%TdT%TH-%TM-%TS %p\n" | sort
+    # Also: find -xdev -type f -exec stat --printf="%y %n\n" \{\} + | sort
 }
 
-type mpv &> /dev/null && function play_random {
-    local vids=()
-
-    find "$@" \( \
-        -iname "*.avi" -or \
-        -iname "*.wmv" -or \
-        -iname "*.flv" -or \
-        -iname "*.mov" -or \
-        -iname "*.mpg" -or \
-        -iname "*.mpeg" -or \
-        -iname "*.asf" -or \
-        -iname "*.mp4" -or \
-        -iname "*.f4v" -or \
-        -iname "*.3gp" -or \
-        -iname "*.ts" -or \
-        -iname "*.tp" -or \
-        -iname "*.rvmb" -or \
-        -iname "*.rv" -or \
-        -iname "*.ogm" -or \
-        -iname "*.mkv" -or \
-        -iname "*.flac" -or \
-        -iname "*.webm" -or \
-        -iname "*.mp3" \
-        \) -print0 | \
-    sort --random-sort --zero-terminated | \
-    while IFS= read -r -d '' vid; do
-        vids+=("${vid}")
-    done
-
-    mpv --loop-playlist=inf "${vids[@]}"
+function binary_compare {
+    diff -u <(xxd "${1}") <(xxd "${2}")
 }
 
 # Set up ssh-agent
-export SSH_AUTH_SOCK=~/.ssh/ssh-agent.sock
+export SSH_AUTH_SOCK=/tmp/swipper-ssh-agent.sock
 pid=($(pgrep -u swipper ssh-agent))
 if [ $? -ne 0 ]; then
     ssh-agent -a "${SSH_AUTH_SOCK}"
     pid=($(pgrep -u swipper ssh-agent))
 fi
 export SSH_AGENT_PID="${pid[1]}"
+
+if type fzf &> /dev/null; then
+    [ -e /usr/share/fzf/key-bindings.zsh ]              && . /usr/share/fzf/key-bindings.zsh
+    [ -e /usr/share/fzf/completion.zsh ]                && . /usr/share/fzf/completion.zsh
+    [ -e /usr/share/doc/fzf/examples/completion.zsh ]   && . /usr/share/doc/fzf/examples/completion.zsh
+    [ -e /usr/share/doc/fzf/examples/key-bindings.zsh ] && . /usr/share/doc/fzf/examples/key-bindings.zsh
+
+    if [ -f ~/.fd_wrapper.sh ]; then
+            export FZF_CTRL_T_COMMAND="bash ~/.fd_wrapper.sh"
+    elif type fd &> /dev/null; then
+        if [ "$(lsb_release --short --id)" = "Ubuntu" ]; then
+            # Ubuntu ships an older version of fd (older than 8.3.0)
+            export FZF_CTRL_T_COMMAND="fd --color never --threads 10"
+        else
+            export FZF_CTRL_T_COMMAND="fd --color never --threads 10 --one-file-system"
+        fi
+    else
+        export FZF_CTRL_T_COMMAND="ag -g ."
+    fi
+fi
+
+function monorepo_clone {
+    clone_name="${1}"
+    cd ~/src/vanilla
+    git pull
+    cd ~/src
+    cp -ai vanilla "${1}"
+    cd "${1}"
+}
+
+for file in ~/.zshrc.d/*.sh; do
+    . "${file}"
+done
